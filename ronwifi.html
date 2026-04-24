@@ -124,6 +124,28 @@
   </div>
 </div>
 
+<div class="modal" id="bannedModal">
+  <div class="modal-box">
+    <div class="modal-icon-error" style="color: #f59e0b;">&#9208;</div>
+    <div class="modal-title">Please Wait</div>
+    <div class="modal-message" id="bannedMessage">Too many attempts.</div>
+    <div class="modal-actions">
+      <button class="btn btn-primary" onclick="hideModal('bannedModal')" type="button">Okay</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="busyModal">
+  <div class="modal-box">
+    <div class="modal-icon-error" style="color: #3b82f6;">&#8987;</div>
+    <div class="modal-title">Coinslot in Use</div>
+    <div class="modal-message">Someone else is currently using this coinslot. Please wait for them to finish.</div>
+    <div class="modal-actions">
+      <button class="btn btn-primary" onclick="hideModal('busyModal')" type="button">Okay</button>
+    </div>
+  </div>
+</div>
+
 <!-- Voucher Modal -->
 <div class="modal" id="voucherModal">
   <div class="modal-box">

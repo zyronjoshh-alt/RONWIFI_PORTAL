@@ -159,7 +159,7 @@
     $('historyCloseBtn').onclick = function() { hideModal('historyModal'); };
   }
 
-  /* ---------- INSERT COIN FLOW ---------- */
+/* ---------- INSERT COIN FLOW ---------- */
   function onInsertCoin() {
     if (!state.vendo) {
       toast('No vendo configured', 'error');
@@ -170,55 +170,71 @@
     animateProgress($('initProgress'), 0, 95, 5000);
 
     // Try backend first, then fall back to ESP direct
-    tryBackendCoinStart(function(backendOk, backendResult) {
-      if (backendOk) {
+    tryBackendCoinStart(function(err, backendResult) {
+      if (!err && backendResult) {
         hideModal('initModal');
         enterCoinSession(backendResult);
         return;
       }
       
       // Backend failed/timed out — try ESP direct
-      tryEspCoinStart(function(espOk, espResult) {
+      tryEspCoinStart(function(err, espResult) {
         hideModal('initModal');
-        if (espOk) {
+        
+        if (!err && espResult) {
+          // Success or Resume!
           enterCoinSession(espResult);
+        } else if (err && err.isHttpError) {
+          // ESP gave us a specific rejection
+          var code = (err.body && err.body.error) ? err.body.error.code : '';
+          var msg = (err.body && err.body.error) ? err.body.error.message : 'Unknown error';
+          
+          if (code === 'banned') {
+            $('bannedMessage').textContent = msg;
+            showModal('bannedModal');
+          } else if (code === 'busy') {
+            showModal('busyModal');
+          } else if (code === 'limbo') {
+            toast(msg, 'warn');
+          } else {
+            showErrorModal('Error', msg);
+          }
         } else {
-          showErrorModal('Coinslot Unavailable', 
-            'Could not reach the coinslot. Please notify the operator.');
+          // Total failure (timeout, network drop)
+          showErrorModal('Coinslot Unavailable', 'Could not reach the coinslot. Please notify the operator.');
         }
       });
     });
   }
 
-  function tryBackendCoinStart(cb) {
-    if (!SETTINGS.backend || !SETTINGS.backend.base_url) {
-      cb(false); return;
-    }
-    
-    var url = SETTINGS.backend.base_url + '/api/portal/coin/start';
-    var timeout = (SETTINGS.backend.timeout_ms) || 5000;
-    
-    httpPost(url, {
-      mac: state.macNoColons,
-      ip: state.ip,
-      vendo_id: state.vendo.id,
-      interface: state.interface
-    }, timeout, function(err, resp) {
-      if (err || !resp || !resp.ok) { cb(false); return; }
-      cb(true, resp.data || {});
-    });
-  }
-
   function tryEspCoinStart(cb) {
-    if (!state.vendo || !state.vendo.ip) { cb(false); return; }
+    if (!state.vendo || !state.vendo.ip) { cb(new Error('no ip')); return; }
     
     var url = 'http://' + state.vendo.ip + '/coin/start';
     httpPost(url, {
       mac: state.macNoColons,
       ip: state.ip
     }, 8000, function(err, resp) {
-      if (err || !resp || !resp.ok) { cb(false); return; }
-      cb(true, resp.data || {});
+      if (err) { cb(err); return; }
+      if (!resp || !resp.ok) { cb(new Error('not ok')); return; }
+      cb(null, resp.data || {});
+    });
+  }
+  
+  // Note: I also quickly updated tryBackendCoinStart signature to match the (err, result) pattern
+  function tryBackendCoinStart(cb) {
+    if (!SETTINGS.backend || !SETTINGS.backend.base_url) {
+      cb(new Error('no backend')); return;
+    }
+    var url = SETTINGS.backend.base_url + '/api/portal/coin/start';
+    httpPost(url, {
+      mac: state.macNoColons,
+      ip: state.ip,
+      vendo_id: state.vendo.id,
+      interface: state.interface
+    }, (SETTINGS.backend.timeout_ms || 5000), function(err, resp) {
+      if (err || !resp || !resp.ok) { cb(err || new Error('not ok')); return; }
+      cb(null, resp.data || {});
     });
   }
 
@@ -231,6 +247,7 @@
     state.coinModalOpen = true;
     $('coinAmount').textContent = '0';
     $('coinTimeEstimate').textContent = '0 min';
+    show($('coinCancelBtn'));
     showModal('coinModal');
     startCoinTimer();
     pollCoinStatus();
@@ -280,6 +297,9 @@
           state.session.minutes = resp.data.minutes || 0;
           $('coinAmount').textContent = state.session.pesos;
           $('coinTimeEstimate').textContent = formatMinutes(state.session.minutes);
+          if (state.session.pesos > 0) {
+            hide($('coinCancelBtn'));
+          }
           if (state.session.pesos > prevPesos) {
             resetCoinTimer();
             sendTelegram('on_each_coin', 'Coin inserted: +₱' + 
@@ -311,12 +331,13 @@
     if (state.coinTimerId) { clearInterval(state.coinTimerId); state.coinTimerId = null; }
     hideModal('coinModal');
     
-    if (reason === 'cancel' && state.session && state.session.pesos === 0) {
-      // Clean cancel with no money inserted
+    if (reason === 'cancel') {
+      var cancelUrl = 'http://' + vendoIp + '/coin/cancel';
+      httpPost(cancelUrl, { session_id: state.session ? state.session.session_id : null }, 3000, function() {});
       state.session = null;
       return;
     }
-    
+
     // Call /coin/done on ESP (or backend)
     var vendoIp = state.vendo && state.vendo.ip;
     if (!vendoIp) {
@@ -459,7 +480,13 @@
           try { cb(null, JSON.parse(xhr.responseText)); }
           catch (e) { cb(e); }
         } else {
-          cb(new Error('HTTP ' + xhr.status));
+          // NEW: Try to parse the error JSON from the ESP
+          try { 
+            var errResp = JSON.parse(xhr.responseText);
+            cb({ isHttpError: true, status: xhr.status, body: errResp });
+          } catch (e) { 
+            cb(new Error('HTTP ' + xhr.status)); 
+          }
         }
       }
     };

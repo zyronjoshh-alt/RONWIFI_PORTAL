@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>RONwifi - Status</title>
+<script>
+// Get session info from MikroTik
+var sessionTimeLeft = "$(session-time-left-secs)";
+var username = "$(username)";
+var time = parseInt(sessionTimeLeft);
+
+// Check if user is logged in (has active session)
+// Works for both time-limited AND unlimited sessions
+var isLoggedIn = (username && username.length > 0 && username !== "");
+
+// OS detection for captive portal dismissal
+function getSuccessURL() {
+    var ua = window.navigator.userAgent;
+    
+    // iOS/macOS - Apple Captive Network Assistant
+    if (/iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)) {
+        return "https://www.google.com";
+    }
+    
+    // Windows - Microsoft connectivity check
+    if (/Windows/i.test(ua)) {
+        return "http://www.msftconnecttest.com/connecttest.txt";
+    }
+    
+    // Android - Google connectivity check (HTTP 204 response)
+    if (/android/i.test(ua)) {
+        return "http://connectivitycheck.gstatic.com/generate_204";
+    }
+    
+    // Default fallback
+    return "http://clients3.google.com/generate_204";
+}
+
+// Execute routing
+if (isLoggedIn) {
+    // User has active session (limited time OR unlimited)
+    // → Redirect to OS-specific URL to dismiss captive portal
+    window.location.href = getSuccessURL();
+} else {
+    // User has no active session (expired or never logged in)
+    // → Redirect back to portal to insert coins
+    setTimeout(function() {
+        window.location.href = '/ronwifi.html?mac=' + encodeURIComponent('$(mac)') + 
+          '&ip=' + encodeURIComponent('$(ip)');
+    }, 1000);
+}
+</script>
+</head>
+<body style="background: #1a1a2e; color: #eee; display: flex; align-items: center; justify-content: center; min-height: 100vh; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;">
+<div style="text-align: center;">
+    <div class="spinner" style="width: 48px; height: 48px; border: 4px solid #333; border-top-color: #00d4ff; border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 24px;"></div>
+    <p style="font-size: 16px; margin: 0; opacity: 0.9;">Checking session...</p>
+    <p style="font-size: 13px; margin-top: 8px; opacity: 0.5;">Please wait</p>
+</div>
+<style>
+@keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</body>
+</html>
